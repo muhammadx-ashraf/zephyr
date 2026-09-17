@@ -1,0 +1,9 @@
+# Copyright (c) 2026 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+
+description: |
+  Intel SoC FPGA DWC2 USB OTG host controller.
+
+compatible: "intel,socfpga-dwc2"
+
+include: "snps,dwc2.yaml"

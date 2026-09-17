@@ -439,4 +439,17 @@
 		compatible = "snps,dwcxgmac-mdio";
 		status = "disabled";
 	};
+
+	usb_otg: usb@10b00000 {
+		compatible = "intel,socfpga-dwc2", "snps,dwc2";
+		reg = <0x10b00000 0x40000>;
+		interrupt-parent = <&gic>;
+		interrupts = <GIC_SPI 93 IRQ_TYPE_LEVEL IRQ_DEFAULT_PRIORITY>;
+		num-out-eps = <16>;
+		num-in-eps = <16>;
+		ghwcfg1 = <0x00000000>;
+		ghwcfg2 = <0x208ffc90>;
+		ghwcfg4 = <0xfe0f0020>;
+		status = "disabled";
+      };
 };

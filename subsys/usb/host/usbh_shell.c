@@ -933,9 +933,6 @@ static void device_list_driver_str(const struct usb_device *udev, const char *cl
 
 static void device_list_volume_str(struct usb_device *udev, char *buf, size_t buflen)
 {
-<<<<<<< HEAD
-	ARG_UNUSED(udev);
-=======
 #if IS_ENABLED(CONFIG_USBH_MSC_DISK)
 	int ret;
 
@@ -943,10 +940,9 @@ static void device_list_volume_str(struct usb_device *udev, char *buf, size_t bu
 	if (ret >= 0) {
 		return;
 	}
-#endif
->>>>>>> 6f14c52b646f (usb: host: add MSC class and multi-device volume naming)
-
+#else
 	snprintk(buf, buflen, "-");
+#endif
 }
 
 static int cmd_device_list(const struct shell *sh,

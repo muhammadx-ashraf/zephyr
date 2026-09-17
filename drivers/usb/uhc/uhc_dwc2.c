@@ -778,12 +778,6 @@ static inline void ch_process_control(const struct device *dev,
 	/* Calculate new packet count */
 	pkt_cnt  = calc_packet_count(size, xfer->mps);
 
-	if (next_dir_is_in) {
-		sys_set_bits((mem_addr_t)&ch->regs->hcchar, USB_DWC2_HCCHAR_EPDIR);
-	} else {
-		sys_clear_bits((mem_addr_t)&ch->regs->hcchar, USB_DWC2_HCCHAR_EPDIR);
-	}
-
 	hctsiz = usb_dwc2_set_hctsiz_pid(USB_DWC2_HCTSIZ_PID_DATA1) |
 		usb_dwc2_set_hctsiz_pktcnt(pkt_cnt) |
 		usb_dwc2_set_hctsiz_xfersize(size);
@@ -794,15 +788,21 @@ static inline void ch_process_control(const struct device *dev,
 
 	/* TODO: Configure split transaction if needed */
 
-	if (dma_addr != NULL && size > 0) {
+	if (dma_addr != 0 && size > 0) {
 		if (next_dir_is_in) {
-			sys_cache_data_invd_range(dma_addr, size);
+			sys_cache_data_invd_range((void*)dma_addr, size);
 		} else {
-			sys_cache_data_flush_range(dma_addr, size);
+			sys_cache_data_flush_range((void*)dma_addr, size);
 		}
 	}
 
 	hcchar = sys_read32((mem_addr_t)&ch->regs->hcchar);
+	if(next_dir_is_in) {
+		hcchar |= USB_DWC2_HCCHAR_EPDIR;
+	}
+	else {
+		hcchar &= ~USB_DWC2_HCCHAR_EPDIR;
+	}
 	hcchar |= USB_DWC2_HCCHAR_CHENA;
 	hcchar &= ~USB_DWC2_HCCHAR_CHDIS;
 	sys_write32(hcchar, (mem_addr_t)&ch->regs->hcchar);
@@ -1279,9 +1279,6 @@ static void ch_start_control(const struct device *dev,
 	/* Save information about control transfer by analyzing the setup packet */
 	ch->length = setup->wLength;
 
-	/* Control stage is always OUT */
-	sys_clear_bits((mem_addr_t)&ch->regs->hcchar, USB_DWC2_HCCHAR_EPDIR);
-
 	pkt_cnt  = calc_packet_count(sizeof(struct usb_setup_packet), xfer->mps);
 	hctsiz = usb_dwc2_set_hctsiz_pid(USB_DWC2_HCTSIZ_PID_SETUP) |
 		usb_dwc2_set_hctsiz_pktcnt(pkt_cnt) |
@@ -1304,6 +1301,7 @@ static void ch_start_control(const struct device *dev,
 
 	/* Start transfer */
 	hcchar = sys_read32((mem_addr_t)&ch->regs->hcchar);
+	hcchar &= ~USB_DWC2_HCCHAR_EPDIR;
 	hcchar |= USB_DWC2_HCCHAR_CHENA;
 	hcchar &= ~USB_DWC2_HCCHAR_CHDIS;
 	sys_write32(hcchar, (mem_addr_t)&ch->regs->hcchar);
@@ -1346,9 +1344,9 @@ static void ch_start_bulk(const struct device *dev,
 
 	if (ch->length > 0) {
 		if (USB_EP_DIR_IS_IN(xfer->ep)) {
-			sys_cache_data_invd_range(dma_addr, ch->length);
+			sys_cache_data_invd_range((void*)dma_addr, ch->length);
 		} else {
-			sys_cache_data_flush_range(dma_addr, ch->length);
+			sys_cache_data_flush_range((void*)dma_addr, ch->length);
 		}
 	}
 

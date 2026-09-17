@@ -20,7 +20,7 @@ LOG_MODULE_REGISTER(usb_host_msc_sample, LOG_LEVEL_INF);
 #define SAMPLE_TRACE(...)
 #endif
 
-#if DT_HAS_COMPAT_STATUS_OKAY(snps_dwc3)
+#if DT_HAS_COMPAT_STATUS_OKAY(snps_dwc2)
 #include <errno.h>
 #include <stdio.h>
 #include <zephyr/device.h>
@@ -259,10 +259,10 @@ int main(void)
 		k_thread_name_set(k_current_get(), "main");
 	}
 
-#if DT_HAS_COMPAT_STATUS_OKAY(snps_dwc3)
+#if DT_HAS_COMPAT_STATUS_OKAY(snps_dwc2)
 	run_usb_host_enumeration();
 #else
-	LOG_INF("No snps,dwc3 in devicetree — add a usb_host.overlay. USB skipped");
+	LOG_INF("No snps,dwc2 in devicetree — add a usb_host.overlay. USB skipped");
 #endif
 
 	return 0;

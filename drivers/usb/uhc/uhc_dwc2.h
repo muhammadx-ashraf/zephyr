@@ -80,6 +80,10 @@ struct uhc_dwc2_config {
 #include "uhc_dwc2_nrf_usbhs_nrf54l.h"
 #endif
 
+#if DT_HAS_COMPAT_STATUS_OKAY(intel_socfpga_dwc2)
+#include "uhc_dwc2_intel_socfpga.h"
+#endif
+
 #define UHC_DWC2_HAS_VENDOR_QUIRK(n)						\
 	DT_NODE_VENDOR_HAS_IDX(DT_DRV_INST(n), 1)
 

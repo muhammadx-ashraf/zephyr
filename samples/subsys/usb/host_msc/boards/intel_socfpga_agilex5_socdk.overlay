@@ -1,0 +1,13 @@
+/*
+ * Copyright (C) 2024 Intel Corporation
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+/* The overlay file should be used to enable any
+ * dts nodes required by this application for this
+ * board.
+ */
+
+zephyr_uhc0: &usb_otg {
+	status = "okay";
+};

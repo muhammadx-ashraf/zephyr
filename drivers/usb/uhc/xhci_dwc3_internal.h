@@ -158,6 +158,8 @@ void xhci_flush_ep0_td(struct xhci_ring *ring, struct xhci_trb *setup, struct xh
 		       struct xhci_trb *status);
 void xhci_copy_ep0_dequeue_into_input_ctx(struct uhc_dwc3_data *priv, struct xhci_dev_slot *slot);
 void xhci_ep0_ring_sync_from_hw(struct uhc_dwc3_data *priv, struct xhci_dev_slot *slot);
+void xhci_ep0_mirror_dequeue_to_sw(struct uhc_dwc3_data *priv, struct xhci_dev_slot *slot);
+int xhci_ep0_align_hw_dequeue(struct uhc_dwc3_data *priv, struct xhci_dev_slot *slot);
 void xhci_ep0_verify_mps_matches(struct uhc_dwc3_data *priv, struct xhci_dev_slot *slot,
 				 uint16_t expect, const char *tag);
 bool xhci_ep0_ring_verify_dequeue_matches_sw(struct uhc_dwc3_data *priv,

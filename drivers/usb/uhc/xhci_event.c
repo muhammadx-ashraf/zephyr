@@ -439,6 +439,12 @@ void xhci_handle_event(struct uhc_dwc3_data *priv, struct xhci_trb *evt)
 				LOG_ERR("xHCI: EP0 transfer failed COMP=%u residual=%u", cc,
 					slot->xfer_length);
 			}
+			/*
+			 * DWC3/Simics often leaves OutputDevCtx EP0 deq at the ring
+			 * base after COMP_SUCCESS. Mirror SW producer so the next
+			 * doorbell does not restart at a stale TRB.
+			 */
+			xhci_ep0_mirror_dequeue_to_sw(priv, slot);
 			k_sem_give(&slot->xfer_sem);
 		} else {
 			int br;

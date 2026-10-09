@@ -1,13 +1,21 @@
 /*
  * Copyright (C) 2024 Intel Corporation
  * SPDX-License-Identifier: Apache-2.0
+ *
+ * Agilex5 USB3.1 (DWC3/xHCI) at 0x11000000. Match Linux SoCDK quirks:
+ * snps,dis_u2_susphy_quirk + snps,dis_u3_susphy_quirk are required on this SoC.
  */
 
-/* The overlay file should be used to enable any
- * dts nodes required by this application for this
- * board.
- */
-
-zephyr_uhc0: &usb_otg {
+zephyr_uhc0: &usb31 {
 	status = "okay";
+	reg-names = "core";
+	snps,dis-u2-susphy-quirk;
+	snps,dis-u3-susphy-quirk;
+	/*
+	 * Simics usb3_hs_disk connects on xHCI port 1 (host port[0]).
+	 * Default/auto usb2-poll-port=2 resets the empty SS companion and
+	 * fails with "USB2 PED not set (PORTSC=0x2a0)" (RxDetect, no CCS).
+	 */
+	zephyr,maximum-speed = "high-speed";
+	zephyr,usb2-poll-port = <1>;
 };

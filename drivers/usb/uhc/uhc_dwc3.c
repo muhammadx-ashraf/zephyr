@@ -662,6 +662,14 @@ static int uhc_dwc3_ep0_enqueue(const struct device *dev, struct uhc_transfer *c
 		bool dir_in = (setup->bmRequestType & 0x80) != 0;
 
 		xhci_ep0_ring_sync_from_hw(priv, slot);
+		if (xhci_ep0_align_hw_dequeue(priv, slot) != 0) {
+			LOG_WRN("EP0 HW dequeue align failed "
+				"(bmReqType=0x%02x bReq=0x%02x) — abort enqueue",
+				setup->bmRequestType, setup->bRequest);
+			xfer->err = -EIO;
+			uhc_xfer_return(dev, xfer, xfer->err);
+			return 0;
+		}
 
 		if (!xhci_ep0_ring_verify_dequeue_matches_sw(priv, slot)) {
 			LOG_WRN("EP0 HW/SW dequeue mismatch before TD "
@@ -673,9 +681,13 @@ static int uhc_dwc3_ep0_enqueue(const struct device *dev, struct uhc_transfer *c
 		}
 
 		/* Control transfer: Setup → [Data] → Status */
-		/* IN data stage: discard stale cache lines before the device DMAs in. */
+		/*
+		 * IN data stage: flush+invalidate before HC DMA-writes the buffer.
+		 * Match bulk IN (dwc3_dma_prep_rx); invalidate-only left dirty lines
+		 * on some AArch64 paths and could yield COMP_USB_TRANSACTION_ERROR.
+		 */
 		if (has_data && xfer->buf && dir_in) {
-			dwc3_dma_invalidate(xfer->buf->data, wLength);
+			dwc3_dma_prep_rx(xfer->buf->data, wLength);
 		}
 
 		xhci_ring_link_trb_begin_td(ring);
@@ -780,6 +792,8 @@ static int uhc_dwc3_ep0_enqueue(const struct device *dev, struct uhc_transfer *c
 
 		if (dwc3_xfer_sem_take_ep0(dev, priv, slot, K_MSEC(5000)) != 0) {
 			struct xhci_ep_ctx *ep0_dbg;
+			uint32_t port_off;
+			uint32_t portsc = 0U;
 
 			LOG_ERR("EP0 xfer timeout — no transfer event? "
 				"(has_data=%d dir_in=%d; check DB ep_id vs ep0 ring)",
@@ -799,6 +813,18 @@ static int uhc_dwc3_ep0_enqueue(const struct device *dev, struct uhc_transfer *c
 				(unsigned int)XHCI_DCI_DEFAULT_CONTROL);
 			LOG_ERR("EP0 timeout: ep_info2=0x%08x tx_info=0x%08x", ep0_dbg->ep_info2,
 				ep0_dbg->tx_info);
+			if (slot->root_port >= 1U) {
+				port_off = XHCI_OP_PORTSC_BASE +
+					   ((uint32_t)slot->root_port - 1U) * XHCI_PORT_REGS_STRIDE;
+				portsc = xhci_readl(priv->op_base, port_off);
+				LOG_ERR("EP0 timeout: root_port=%u PORTSC=0x%08x CCS=%u PED=%u "
+					"PLS=%u speed=%u",
+					(unsigned int)slot->root_port, portsc,
+					(portsc & XHCI_PORTSC_CCS) != 0U ? 1U : 0U,
+					(portsc & XHCI_PORTSC_PED) != 0U ? 1U : 0U,
+					(unsigned int)((portsc & XHCI_PORTSC_PLS_MASK) >> 5),
+					(unsigned int)XHCI_PORTSC_SPEED(portsc));
+			}
 			(void)xhci_cancel_ep_xfer(priv, slot, XHCI_DCI_DEFAULT_CONTROL, xfer,
 						  -ETIMEDOUT);
 			if (slot->ep0_active_xfer == xfer) {
@@ -843,9 +869,9 @@ static int uhc_dwc3_ep0_enqueue(const struct device *dev, struct uhc_transfer *c
 		}
 
 		/*
-		 * HS (and FS after 8-byte read): re-commit EP0 via Evaluate Context after
-		 * full device descriptor. FS path may have already updated MPS from byte 7;
-		 * issuing Evaluate again with current ep0_max_packet refreshes the xHC.
+		 * Evaluate Context only when EP0 MPS must change. A no-op Evaluate after
+		 * GET_DESCRIPTOR(18) (HS MPS already 64) has left Simics DWC3 EP0 Running
+		 * with dequeue stuck on the next control TD (GET_DESCRIPTOR CONFIG timeout).
 		 */
 		if (xfer->err == 0 && has_data && dir_in && xfer->buf != NULL &&
 		    setup->bRequest == USB_SREQ_GET_DESCRIPTOR &&
@@ -853,10 +879,28 @@ static int uhc_dwc3_ep0_enqueue(const struct device *dev, struct uhc_transfer *c
 		    wLength >= 18U && wLength <= 64U &&
 		    ((setup->wValue >> 8) & 0xffU) == USB_DESC_DEVICE &&
 		    (setup->wValue & 0xffU) == 0U && xfer->buf->len >= 18U) {
-			int er = xhci_evaluate_ep0_mps(priv, slot, slot->ep0_max_packet);
+			uint8_t mps0 = xfer->buf->data[7];
+			uint16_t want = slot->ep0_max_packet;
 
-			if (er != 0) {
-				LOG_WRN("Evaluate Context after GET_DESCRIPTOR(18) failed: %d", er);
+			if (priv->port_speed == XHCI_SPEED_FULL && mps0 != 0U &&
+			    (mps0 == 8U || mps0 == 16U || mps0 == 32U || mps0 == 64U)) {
+				want = mps0;
+			} else if (priv->port_speed == XHCI_SPEED_HIGH && mps0 == 64U) {
+				want = 64U;
+			}
+
+			if (want != slot->ep0_max_packet) {
+				int er = xhci_evaluate_ep0_mps(priv, slot, want);
+
+				if (er != 0) {
+					LOG_WRN("Evaluate Context after GET_DESCRIPTOR(18) "
+						"failed: %d",
+						er);
+				}
+			} else {
+				UHC_DWC3_DBG("skip Evaluate Context after GET_DESCRIPTOR(18) "
+					     "(EP0 MPS already %u)",
+					     (unsigned int)slot->ep0_max_packet);
 			}
 		}
 

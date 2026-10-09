@@ -449,5 +449,17 @@
 		ghwcfg2 = <0x208ffc90>;
 		ghwcfg4 = <0xfe0f0020>;
 		status = "disabled";
-      };
+	};
+
+	usb31: usb31@11000000 {
+		compatible = "snps,dwc3";
+		reg = <0x11000000 0x100000>;
+		reg-names = "core";
+		interrupt-parent = <&gic>;
+		interrupts = <GIC_SPI 94 IRQ_TYPE_LEVEL IRQ_DEFAULT_PRIORITY>;
+		/* Required on Agilex5 (same as Linux altr,agilex5-dwc3). */
+		snps,dis-u2-susphy-quirk;
+		snps,dis-u3-susphy-quirk;
+		status = "disabled";
+	};
 };

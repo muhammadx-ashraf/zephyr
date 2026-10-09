@@ -62,6 +62,13 @@ void xhci_copy_ep0_dequeue_into_input_ctx(struct uhc_dwc3_data *priv, struct xhc
 		xhci_tr_deq_ptr(seg + (uint64_t)ring->enqueue * 16ULL, ring->cycle_state & 1U);
 }
 
+/*
+ * Output Device Context TR Dequeue is often stale on integrated DWC3/Simics
+ * (never advances past the ring base after EP0 completions). Snapping the SW
+ * producer back to that stale deq reuses TRB slots the HC has already passed
+ * — next doorbell then hangs with EP STATE=Running and no transfer event.
+ * Same rule as bulk: never regress the software producer.
+ */
 void xhci_ep0_ring_sync_from_hw(struct uhc_dwc3_data *priv, struct xhci_dev_slot *slot)
 {
 	struct xhci_ring *ring = &slot->ep0_ring;
@@ -71,6 +78,7 @@ void xhci_ep0_ring_sync_from_hw(struct uhc_dwc3_data *priv, struct xhci_dev_slot
 	uint64_t trb_addr;
 	uint32_t idx;
 	unsigned int dcs;
+	unsigned int sw_cyc;
 
 	dwc3_dma_invalidate(slot->dev_ctx, 2048);
 
@@ -79,6 +87,7 @@ void xhci_ep0_ring_sync_from_hw(struct uhc_dwc3_data *priv, struct xhci_dev_slot
 	dcs = (unsigned int)(deq & 1ULL);
 	trb_addr = deq & ~(uint64_t)0xFULL;
 	seg = xhci_dma_addr(ring->trbs);
+	sw_cyc = ring->cycle_state & 1U;
 
 	if (trb_addr < seg) {
 		return;
@@ -101,14 +110,100 @@ void xhci_ep0_ring_sync_from_hw(struct uhc_dwc3_data *priv, struct xhci_dev_slot
 		return;
 	}
 
-	if (ring->enqueue != idx || (ring->cycle_state & 1U) != dcs) {
+	if (dcs == sw_cyc && idx < ring->enqueue) {
+		UHC_DWC3_DBG("EP0 ring sync: ignore stale HW deq idx=%u behind SW enq=%u "
+			     "(cyc=%u raw deq=0x%llx)",
+			     (unsigned int)idx, (unsigned int)ring->enqueue, sw_cyc,
+			     (unsigned long long)deq);
+		return;
+	}
+
+	if (ring->enqueue != idx || sw_cyc != dcs) {
 		UHC_DWC3_DBG("EP0 ring sync: deq=0x%llx enq %u->%u cyc %u->%u",
 			     (unsigned long long)deq, (unsigned int)ring->enqueue,
-			     (unsigned int)idx, (unsigned int)(ring->cycle_state & 1U), dcs);
+			     (unsigned int)idx, sw_cyc, dcs);
 	}
 
 	ring->enqueue = idx;
 	ring->cycle_state = dcs;
+}
+
+void xhci_ep0_mirror_dequeue_to_sw(struct uhc_dwc3_data *priv, struct xhci_dev_slot *slot)
+{
+	struct xhci_ring *ring = &slot->ep0_ring;
+	struct xhci_ep_ctx *ep0;
+	uint64_t seg;
+	uint64_t deq;
+
+	if (ring->trbs == NULL) {
+		return;
+	}
+
+	seg = xhci_dma_addr(ring->trbs);
+	deq = xhci_tr_deq_ptr(seg + (uint64_t)ring->enqueue * 16ULL, ring->cycle_state & 1U);
+	ep0 = xhci_slot_output_ep_ctx(slot, priv, XHCI_DCI_DEFAULT_CONTROL);
+	ep0->deq = deq;
+	dwc3_dma_flush(ep0, sizeof(*ep0));
+}
+
+int xhci_ep0_align_hw_dequeue(struct uhc_dwc3_data *priv, struct xhci_dev_slot *slot)
+{
+	struct xhci_ring *ring = &slot->ep0_ring;
+	struct xhci_ep_ctx *ep0;
+	uint64_t deq;
+	uint64_t seg;
+	uint64_t trb_addr;
+	uint64_t want;
+	uint32_t idx;
+	unsigned int dcs;
+	int ret;
+
+	if (ring->trbs == NULL) {
+		return -EINVAL;
+	}
+
+	dwc3_dma_invalidate(slot->dev_ctx, 2048);
+	ep0 = xhci_slot_output_ep_ctx(slot, priv, XHCI_DCI_DEFAULT_CONTROL);
+	deq = ep0->deq;
+	dcs = (unsigned int)(deq & 1ULL);
+	trb_addr = deq & ~(uint64_t)0xFULL;
+	seg = xhci_dma_addr(ring->trbs);
+
+	if (trb_addr >= seg) {
+		idx = (uint32_t)((trb_addr - seg) / 16U);
+		if (idx == ring->num_trbs - 1U) {
+			idx = 0U;
+			dcs = (ring->trbs[ring->num_trbs - 1U].control & XHCI_TRB_CYCLE) != 0U ? 1U
+											      : 0U;
+		}
+		if (idx == ring->enqueue && dcs == (ring->cycle_state & 1U)) {
+			return 0;
+		}
+	}
+
+	want = xhci_tr_deq_ptr(seg + (uint64_t)ring->enqueue * 16ULL, ring->cycle_state & 1U);
+
+	UHC_DWC3_DBG("EP0 align: HW deq=0x%llx → Set TR Dequeue 0x%llx (sw_enq=%u cyc=%u)",
+		     (unsigned long long)deq, (unsigned long long)want,
+		     (unsigned int)ring->enqueue, (unsigned int)(ring->cycle_state & 1U));
+
+	/*
+	 * xHCI §4.6.9: Set TR Dequeue requires Stopped or Error. Idle Running
+	 * EP0 after a completed TD still needs Stop first on DWC3.
+	 */
+	ret = xhci_cmd_stop_ep_ring(priv, slot, 0U);
+	if (ret != 0) {
+		LOG_WRN("EP0 align: Stop EP failed %d — try Set TR Dequeue anyway", ret);
+	}
+
+	ret = xhci_cmd_set_tr_dequeue_deq(priv, slot, 0U, want);
+	if (ret != 0) {
+		LOG_ERR("EP0 align: Set TR Dequeue failed %d", ret);
+		return ret;
+	}
+
+	xhci_ep0_mirror_dequeue_to_sw(priv, slot);
+	return 0;
 }
 
 static uint16_t xhci_ep0_max_packet_from_out_ctx(const struct uhc_dwc3_data *priv,

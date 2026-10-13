@@ -847,11 +847,10 @@ static void eth_dwc_xgmac_irq_work(struct k_work *item)
 	uint32_t dma_chnl_interrupt_sts = 0u;
 
 	for (uint32_t x = 0; x < config->num_dma_chnl; x++) {
-		if (cntxt_data->dma_interrupt_sts & BIT(x)) {
-			dma_chnl_interrupt_sts = cntxt_data->dma_chnl_interrupt_sts[x];
+		dma_chnl_interrupt_sts = cntxt_data->dma_chnl_interrupt_sts[x];
+		if (dma_chnl_interrupt_sts) {
 			cntxt_data->dma_chnl_interrupt_sts[x] ^= dma_chnl_interrupt_sts;
 			eth_dwc_xgmac_dmach_isr(dev, dma_chnl_interrupt_sts, x);
-			WRITE_BIT(cntxt_data->dma_interrupt_sts, x, 0);
 		}
 	}
 }

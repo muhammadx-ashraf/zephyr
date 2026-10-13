@@ -1,0 +1,98 @@
+# Copyright (C) 2025 Microchip Technology Inc. and its subsidiaries
+# SPDX-License-Identifier: Apache-2.0
+
+description: Microchip KSZ9031 Ethernet PHY device
+
+compatible: "microchip,ksz9031"
+
+include: ethernet-phy-common.yaml
+
+properties:
+  no-reset:
+    type: boolean
+    description: Do not reset the PHY during initialization
+  default-speeds:
+    default: ["10BASE Half-Duplex", "10BASE Full-Duplex", "100BASE Half-Duplex",
+              "100BASE Full-Duplex", "1000BASE Half-Duplex", "1000BASE Full-Duplex"]
+  txc-skew-ps:
+    type: int
+    default: 900
+    description: Same as below.
+  rxc-skew-ps:
+    type: int
+    default: 900
+    description: |
+      Skew control of the pad in picoseconds.
+
+      The device tree value to delay mapping is as follows:
+      Device Tree Value    Delay
+      ---------------------------
+      0    0               -900ps
+      1    60              -840ps
+      2    120             -780ps
+      3    180             -720ps
+      4    240             -660ps
+      5    300             -600ps
+      6    360             -540ps
+      7    420             -480ps
+      8    480             -420ps
+      9    540             -360ps
+      10   600             -300ps
+      11   660             -240ps
+      12   720             -180ps
+      13   780             -120ps
+      14   840              -60ps
+      15   900                0ps
+      16   960               60ps
+      17   1020             120ps
+      18   1080             180ps
+      19   1140             240ps
+      20   1200             300ps
+      21   1260             360ps
+      22   1320             420ps
+      23   1380             480ps
+      24   1440             540ps
+      25   1500             600ps
+      26   1560             660ps
+      27   1620             720ps
+      28   1680             780ps
+      29   1740             840ps
+      30   1800             900ps
+      31   1860             960ps
+  txen-skew-ps:
+    type: int
+    default: 420
+    description: Same as below.
+  rxdv-skew-ps:
+    type: int
+    default: 420
+    description: Same as below.
+  txd-skew-ps:
+    type: array
+    default: [420, 420, 420, 420]
+    description: Same as below.
+  rxd-skew-ps:
+    type: array
+    default: [420, 420, 420, 420]
+    description: |
+      Skew control of the pad in picoseconds.
+
+      The device tree value to delay mapping is as follows:
+      Device Tree Value    Delay
+      ---------------------------
+      0    0               -420ps
+      1    60              -360ps
+      2    120             -300ps
+      3    180             -240ps
+      4    240             -180ps
+      5    300             -120ps
+      6    360              -60ps
+      7    420                0ps
+      8    480               60ps
+      9    540              120ps
+      10   600              180ps
+      11   660              240ps
+      12   720              300ps
+      13   780              360ps
+      14   840              420ps
+      15   900              480ps

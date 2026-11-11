@@ -2114,7 +2114,7 @@ static int uhc_dwc2_init(const struct device *const dev)
 
 	gsnpsid = sys_read32((mem_addr_t)&base->gsnpsid);
 	if (gsnpsid == 0) {
-		LOG_ERR("Unexpected GSNPSID 0x%08x", gsnpsid);
+		LOG_ERR("Unexpected GSNPSID 0x%08x addr %p", gsnpsid, &base->gsnpsid);
 		return -ENOTSUP;
 	}
 

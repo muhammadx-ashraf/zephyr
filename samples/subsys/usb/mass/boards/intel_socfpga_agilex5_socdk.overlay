@@ -1,0 +1,12 @@
+/*
+ * Copyright (C) 2024 Intel Corporation
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+/* Board DTS already enables &sdmmc with zephyr,sdmmc-disk (disk-name = "SD").
+ * Expose that whole MMC to the USB host (partitions visible on the PC).
+ */
+
+zephyr_udc0: &usb_otg {
+	status = "okay";
+};

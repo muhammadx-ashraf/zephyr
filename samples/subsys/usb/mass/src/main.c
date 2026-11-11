@@ -43,15 +43,18 @@ static struct fs_mount_t fs_mnt;
 static struct usbd_context *sample_usbd;
 
 #if CONFIG_DISK_DRIVER_RAM
-USBD_DEFINE_MSC_LUN(ram, "RAM", "Zephyr", "RAMDisk", "0.00");
+USBD_DEFINE_MSC_LUN(ram, "RAM",
+		    CONFIG_APP_MSC_T10_VENDOR, CONFIG_APP_MSC_T10_PRODUCT, "0.00");
 #endif
 
 #if CONFIG_DISK_DRIVER_FLASH
-USBD_DEFINE_MSC_LUN(nand, "NAND", "Zephyr", "FlashDisk", "0.00");
+USBD_DEFINE_MSC_LUN(nand, "NAND",
+		    CONFIG_APP_MSC_T10_VENDOR, CONFIG_APP_MSC_T10_PRODUCT, "0.00");
 #endif
 
 #if CONFIG_DISK_DRIVER_SDMMC
-USBD_DEFINE_MSC_LUN(sd, "SD", "Zephyr", "SD", "0.00");
+USBD_DEFINE_MSC_LUN(sd, "SD",
+		    CONFIG_APP_MSC_T10_VENDOR, CONFIG_APP_MSC_T10_PRODUCT, "0.00");
 #endif
 
 static int setup_flash(struct fs_mount_t *mnt)

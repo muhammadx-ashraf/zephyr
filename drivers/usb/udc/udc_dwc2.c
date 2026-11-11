@@ -440,10 +440,15 @@ static int dwc2_tx_fifo_write(const struct device *dev,
 	/* Lock and write to endpoint FIFO */
 	key = k_spin_lock(&priv->lock);
 
-	/* Set number of packets and transfer size */
-	sys_write32((is_periodic ? usb_dwc2_set_dieptsizn_mc(1 + addnl) : 0) |
-		    usb_dwc2_set_dieptsizn_pktcnt(pktcnt) |
-		    usb_dwc2_set_dieptsizn_xfersize(len), dieptsiz_reg);
+	/* EP0 uses DIEPTSIZ0 (narrower fields) than DIEPTSIZn */
+	if (ep_idx == 0U) {
+		sys_write32(usb_dwc2_set_dieptsiz0_pktcnt(pktcnt) |
+			    usb_dwc2_set_dieptsiz0_xfersize(len), dieptsiz_reg);
+	} else {
+		sys_write32((is_periodic ? usb_dwc2_set_dieptsizn_mc(1 + addnl) : 0) |
+			    usb_dwc2_set_dieptsizn_pktcnt(pktcnt) |
+			    usb_dwc2_set_dieptsizn_xfersize(len), dieptsiz_reg);
+	}
 
 	if (dwc2_in_buffer_dma_mode(dev)) {
 		if (!dwc2_dma_buffer_ok_to_use(dev, buf->data, len, cfg->mps)) {
@@ -1891,6 +1896,19 @@ static int udc_dwc2_init_controller(const struct device *dev)
 		gusbcfg |= USB_DWC2_GUSBCFG_PHYIF_16_BIT;
 	}
 
+	/*
+	 * FORCEDEVMODE write above clears GUSBCFG including USBTRDTIM. Device
+	 * mode needs the MAC-PHY turnaround programmed (Linux does the same);
+	 * leaving it at 0 breaks HS control data (GET_DESCRIPTOR) while ZLP
+	 * handshakes like SET_ADDRESS can still succeed.
+	 */
+	gusbcfg &= ~USB_DWC2_GUSBCFG_USBTRDTIM_MASK;
+	if (gusbcfg & USB_DWC2_GUSBCFG_PHYIF_16_BIT) {
+		gusbcfg |= usb_dwc2_set_gusbcfg_usbtrdtim(USB_DWC2_GUSBCFG_USBTRDTIM_16BIT);
+	} else {
+		gusbcfg |= usb_dwc2_set_gusbcfg_usbtrdtim(USB_DWC2_GUSBCFG_USBTRDTIM_8BIT);
+	}
+
 	/* Update PHY configuration */
 	sys_write32(gusbcfg, gusbcfg_reg);
 	sys_write32(dcfg, dcfg_reg);
@@ -1933,11 +1951,20 @@ static int udc_dwc2_init_controller(const struct device *dev)
 		uint32_t default_depth;
 		uint32_t spram_size;
 		uint32_t max_rxfifo;
+		uint32_t fifo0_depth;
+		uint32_t fifo_end;
+		uint32_t gdfifocfg;
 
 		/* Get available SPRAM size and calculate max allocatable RX fifo size */
 		val = sys_read32((mem_addr_t)&base->gdfifocfg);
 		spram_size = usb_dwc2_get_gdfifocfg_gdfifocfg(val);
+		if (spram_size == 0U) {
+			spram_size = priv->dfifodepth;
+		}
 		max_rxfifo = ((spram_size * MAX_RXFIFO_GDFIFO_PERCENTAGE) / 100);
+		if (max_rxfifo == 0U) {
+			max_rxfifo = priv->dfifodepth;
+		}
 
 		/* TODO: For proper runtime FIFO sizing UDC driver would have to
 		 * have prior knowledge of the USB configurations. Only with the
@@ -1959,14 +1986,43 @@ static int udc_dwc2_init_controller(const struct device *dev)
 		 * the programmed value is not greater than what driver sets.
 		 */
 		priv->rxfifo_depth = min3(priv->rxfifo_depth, default_depth, max_rxfifo);
+		if (priv->rxfifo_depth == 0U) {
+			priv->rxfifo_depth = MIN(default_depth, max_rxfifo);
+		}
 		sys_write32(usb_dwc2_set_grxfsiz(priv->rxfifo_depth), grxfsiz_reg);
 
-		/* Set TxFIFO 0 depth */
-		val = MIN(UDC_DWC2_FIFO0_DEPTH, priv->max_txfifo_depth[0]);
-		gnptxfsiz = usb_dwc2_set_gnptxfsiz_nptxfdep(val) |
+		/* Set TxFIFO 0 depth; never program 0 or control IN becomes ZLP. */
+		if (priv->max_txfifo_depth[0] == 0U) {
+			priv->max_txfifo_depth[0] = UDC_DWC2_FIFO0_DEPTH;
+		}
+		fifo0_depth = MIN(UDC_DWC2_FIFO0_DEPTH, priv->max_txfifo_depth[0]);
+		gnptxfsiz = usb_dwc2_set_gnptxfsiz_nptxfdep(fifo0_depth) |
 			    usb_dwc2_set_gnptxfsiz_nptxfstaddr(priv->rxfifo_depth);
 
 		sys_write32(gnptxfsiz, (mem_addr_t)&base->gnptxfsiz);
+
+		/*
+		 * Power-on DIEPTXF values can overlap RxFIFO/TxFIFO0 (seen as
+		 * depth 8192 / huge addresses on some SoCs). Linux always
+		 * rearranges these; clear them so EP0 IN data is not corrupted.
+		 * dwc2_set_dedicated_fifo() reallocates when non-control EPs
+		 * are activated.
+		 */
+		fifo_end = priv->rxfifo_depth + fifo0_depth;
+		for (uint8_t i = 1U; i < priv->ineps; i++) {
+			dwc2_set_txf(dev, i - 1U, 0U, fifo_end);
+		}
+
+		gdfifocfg = usb_dwc2_set_gdfifocfg_gdfifocfg(priv->dfifodepth) |
+			    usb_dwc2_set_gdfifocfg_epinfobaseaddr(fifo_end);
+		sys_write32(gdfifocfg, (mem_addr_t)&base->gdfifocfg);
+
+		/* TXFNUM 0x10 flushes all TxFIFOs (Programming Guide) */
+		dwc2_flush_tx_fifo(dev, 0x10);
+		dwc2_flush_rx_fifo(dev);
+
+		LOG_INF("FIFO RX %u TX0 %u end %u (words)",
+			priv->rxfifo_depth, fifo0_depth, fifo_end);
 	}
 
 	LOG_DBG("RX FIFO size %u bytes", priv->rxfifo_depth * 4);
@@ -2178,9 +2234,6 @@ static int dwc2_driver_preinit(const struct device *dev)
 	data->caps.mps0 = UDC_MPS0_64;
 
 	(void)dwc2_quirk_caps(dev);
-	if (data->caps.hs) {
-		mps = 1024;
-	}
 
 	/*
 	 * At this point, we cannot or do not want to access the hardware
@@ -2189,7 +2242,21 @@ static int dwc2_driver_preinit(const struct device *dev)
 	 * configured endpoints in the hardware. This can be considered a
 	 * workaround, and we may change the upper layer internals to avoid it
 	 * in the future.
+	 *
+	 * HSPHYTYPE from DT also drives caps.hs. Without it, usbd only
+	 * registers FS configurations while the core still enumerates at HS,
+	 * so the host sees bNumConfigurations == 0 ("no configurations").
 	 */
+	if (!data->caps.hs &&
+	    usb_dwc2_get_ghwcfg2_hsphytype(config->ghwcfg2) !=
+	    USB_DWC2_GHWCFG2_HSPHYTYPE_NO_HS) {
+		data->caps.hs = true;
+	}
+
+	if (data->caps.hs) {
+		mps = 1024;
+	}
+
 	ineps = usb_dwc2_get_ghwcfg4_ineps(config->ghwcfg4) + 1U;
 	numdeveps = usb_dwc2_get_ghwcfg2_numdeveps(config->ghwcfg2) + 1U;
 	LOG_DBG("Number of endpoints (NUMDEVEPS + 1) %u", numdeveps);

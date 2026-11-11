@@ -166,6 +166,9 @@ static inline struct usb_dwc2_reg *dwc2_get_base(const struct device *dev)
 #if DT_HAS_COMPAT_STATUS_OKAY(infineon_xmc4xxx_usb)
 #include "udc_dwc2_xmc4xxx.h"
 #endif
+#if DT_HAS_COMPAT_STATUS_OKAY(intel_socfpga_dwc2)
+#include "udc_dwc2_intel_socfpga.h"
+#endif
 #if DT_HAS_COMPAT_STATUS_OKAY(nordic_nrf_usbhs)
 #include "udc_dwc2_nrf_usbhs.h"
 #endif

@@ -551,7 +551,8 @@ static struct net_buf *string_ascii7_to_utf16le(struct usbd_context *const uds_c
 		ascii7_str = (uint8_t *)dn->ptr;
 	}
 
-	LOG_DBG("wLength %u, bLength %u", wLength, head.bLength);
+	LOG_INF("String desc utype %u wLength %u bLength %u",
+		dn->str.utype, wLength, head.bLength);
 
 	len = MIN(head.bLength, wLength);
 	buf = usbd_ep_ctrl_data_in_alloc(uds_ctx, len);
@@ -786,8 +787,8 @@ static struct net_buf *sreq_get_descriptor(struct usbd_context *const uds_ctx)
 	uint8_t desc_type = USB_GET_DESCRIPTOR_TYPE(setup->wValue);
 	uint8_t desc_idx = USB_GET_DESCRIPTOR_INDEX(setup->wValue);
 
-	LOG_DBG("Get Descriptor request type %u index %u",
-		desc_type, desc_idx);
+	LOG_INF("Get Descriptor request type %u index %u wLength %u",
+		desc_type, desc_idx, setup->wLength);
 
 	if (setup->RequestType.recipient != USB_REQTYPE_RECIPIENT_DEVICE) {
 		struct net_buf *buf = NULL;

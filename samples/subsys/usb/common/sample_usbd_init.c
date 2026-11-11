@@ -34,7 +34,12 @@ USBD_DEVICE_DEFINE(sample_usbd,
 USBD_DESC_LANG_DEFINE(sample_lang);
 USBD_DESC_MANUFACTURER_DEFINE(sample_mfr, CONFIG_SAMPLE_USBD_MANUFACTURER);
 USBD_DESC_PRODUCT_DEFINE(sample_product, CONFIG_SAMPLE_USBD_PRODUCT);
-IF_ENABLED(CONFIG_HWINFO, (USBD_DESC_SERIAL_NUMBER_DEFINE(sample_sn)));
+/* Fixed serial: Agilex5 (and similar) have CONFIG_HWINFO but no device-ID
+ * backend; HWINFO-based serial would STALL GET_DESCRIPTOR(string) and some
+ * hosts then show no manufacturer/product either.
+ */
+USBD_DESC_STRING_DEFINE(sample_sn, CONFIG_SAMPLE_USBD_SN,
+			USBD_DUT_STRING_SERIAL_NUMBER);
 
 /* doc string instantiation end */
 
@@ -118,9 +123,7 @@ struct usbd_context *sample_usbd_setup_device(usbd_msg_cb_t msg_cb)
 		return NULL;
 	}
 
-	IF_ENABLED(CONFIG_HWINFO, (
-		err = usbd_add_descriptor(&sample_usbd, &sample_sn);
-	))
+	err = usbd_add_descriptor(&sample_usbd, &sample_sn);
 	if (err) {
 		LOG_ERR("Failed to initialize SN descriptor (%d)", err);
 		return NULL;
@@ -192,6 +195,7 @@ struct usbd_context *sample_usbd_setup_device(usbd_msg_cb_t msg_cb)
 
 struct usbd_context *sample_usbd_init_device(usbd_msg_cb_t msg_cb)
 {
+	struct usb_device_descriptor *hs;
 	int err;
 
 	if (sample_usbd_setup_device(msg_cb) == NULL) {
@@ -205,6 +209,13 @@ struct usbd_context *sample_usbd_init_device(usbd_msg_cb_t msg_cb)
 		return NULL;
 	}
 	/* doc device init end */
+
+	hs = sample_usbd.hs_desc;
+	if (hs != NULL) {
+		LOG_INF("USB strings mfr='%s' product='%s' idx iMfr=%u iProd=%u iSN=%u",
+			CONFIG_SAMPLE_USBD_MANUFACTURER, CONFIG_SAMPLE_USBD_PRODUCT,
+			hs->iManufacturer, hs->iProduct, hs->iSerialNumber);
+	}
 
 	return &sample_usbd;
 }

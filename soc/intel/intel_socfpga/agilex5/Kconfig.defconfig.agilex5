@@ -13,4 +13,9 @@ config SYS_CLOCK_HW_CYCLES_PER_SEC
 
 config KERNEL_VM_SIZE
 	default 0x400000
+
+# Default ARM64_VA_BITS=32 leaves MAX_XLAT_TABLES at 8; Agilex5 maps many
+# MMIO windows (UART, GIC, USB, SD, eth, ...) and runs out during device_map().
+config MAX_XLAT_TABLES
+	default 24
 endif

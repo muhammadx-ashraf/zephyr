@@ -2,8 +2,8 @@
 # SPDX-License-Identifier: Apache-2.0
 
 description: |
-  Intel SoC FPGA DWC2 USB OTG host controller.
+  Intel SoC FPGA DWC2 USB OTG controller.
 
 compatible: "intel,socfpga-dwc2"
 
-include: "snps,dwc2.yaml"
+include: ["snps,dwc2.yaml", "reset-device.yaml"]

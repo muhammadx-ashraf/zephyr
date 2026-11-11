@@ -21,6 +21,13 @@ config SAMPLE_USBD_PRODUCT
 	help
 	  USB device sample product stringa.
 
+config SAMPLE_USBD_SN
+	string "USB device sample serial number string"
+	default "ZEPHYR123456"
+	help
+	  Fixed USB serial number string. Used when HWINFO cannot provide a
+	  device ID (or always, for a stable sample serial).
+
 config SAMPLE_USBD_VID
 	hex "USB device sample Vendor ID"
 	default 0x2fe3
